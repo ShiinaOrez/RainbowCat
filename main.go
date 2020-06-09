@@ -8,7 +8,10 @@ import (
     _const "github.com/ShiinaOrez/kylin/const"
     "github.com/ShiinaOrez/kylin/crawler"
     "github.com/ShiinaOrez/kylin/interceptor"
+    "github.com/ShiinaOrez/kylin/logger"
     "github.com/ShiinaOrez/kylin/param"
+    "github.com/ShiinaOrez/kylin/render"
+    "os"
 )
 
 type ParamInterceptor struct {}
@@ -24,35 +27,28 @@ func (i *ParamInterceptor) GetID() string {
     return "keyword-interceptor"
 }
 
-type CradCrawler struct {
-    crawler.BaseCrawler
-}
-
-func (ic CradCrawler) GetID() string {
-    return "CRAD-Crawler"
-}
-
 func main() {
     var (
         k            kylin.Kylin             = kylin.NewKylin()
         i            interceptor.Interceptor = &ParamInterceptor{}
-        cradCrawler  crawler.Crawler         = &CradCrawler{}
+        cradCrawler  crawler.Crawler         = &crawler.BaseCrawler{ID: "CRAD-Crawler"}
     )
 
     err := k.AddInputInterceptor(&i, "tail")
     if err != nil {
-        k.GetLogger().Fatal(err.Error())
+        logger.GetLogger(nil).Fatal(err.Error())
         return
     }
     cradCrawler.SetProc(crad.Proc)
 
-    err = k.RegisterCrawler(&cradCrawler)
+    err = k.RegisterCrawlerWithRender(&cradCrawler, render.FileRender{})
     if err != nil {
-        k.GetLogger().Fatal(err.Error())
+        logger.GetLogger(nil).Fatal(err.Error())
         return
     }
     kw := "计算机"
-    p := param.NewJSONParam(fmt.Sprintf(`{"content": {"keyword": "%s", "page": 2}}`, kw))
+    path, _ := os.Getwd()
+    p := param.NewJSONParam(fmt.Sprintf(`{"content": {"keyword": "%s", "page": 1, "path": "%s"}}`, kw, path))
 
     ch := k.StartOn(p)
     defer k.Stop()
@@ -61,9 +57,9 @@ func main() {
     case result := <-ch:
         switch result {
         case _const.Success:
-            k.GetLogger().Info("Success")
+            logger.GetLogger(nil).Info("Success")
         case _const.Failed:
-            k.GetLogger().Info("Failed")
+            logger.GetLogger(nil).Info("Failed")
         }
     }
 }

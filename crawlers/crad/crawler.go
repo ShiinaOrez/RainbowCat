@@ -2,8 +2,12 @@ package crad
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"github.com/ShiinaOrez/RainbowCat/crawlers/crad/sql"
 	_const "github.com/ShiinaOrez/kylin/const"
+	"github.com/ShiinaOrez/kylin/logger"
+	"github.com/ShiinaOrez/kylin/result"
 	"github.com/anaskhan96/soup"
 	"github.com/mozillazg/request"
 	"net/http"
@@ -25,6 +29,11 @@ type Article struct {
 	Abstract string   `json:"abstract"`
 }
 
+func (r Result) Format() string {
+	bytes, _ := json.MarshalIndent(r, "", "    ")
+	return string(bytes)
+}
+
 func checkFailed(err error, notifyCh *chan int) bool {
 	if err != nil {
 		*notifyCh<- _const.StatusFailed
@@ -32,13 +41,14 @@ func checkFailed(err error, notifyCh *chan int) bool {
 	return err != nil
 }
 
-func Proc(ctx context.Context, notifyCh *chan int) {
+func Proc(ctx context.Context, notifyCh *chan int) result.Data {
 	var (
 		kw   string
 		page int
 	)
 	kw = ctx.Value("keyword").(string)
 	page, _ = strconv.Atoi(ctx.Value("page").(string))
+	logger.GetLogger(ctx).Info(fmt.Sprintf("Keyword: %s, Page: %s", kw, ctx.Value("page").(string)))
 	c := new(http.Client)
 	req := request.NewRequest(c)
 	searchSQL := sql.BuildAllSearchSQL(kw).DefaultSource().Page(page)
@@ -46,16 +56,17 @@ func Proc(ctx context.Context, notifyCh *chan int) {
 	resp, err := req.PostForm("http://crad.ict.ac.cn/CN/article/advancedSearchResult.do", data)
 	defer resp.Body.Close()
 	if checkFailed(err, notifyCh) {
-		return
+		return nil
 	}
 	text, err := resp.Text()
 	if checkFailed(err, notifyCh) {
-		return
+		return nil
 	}
 	doc := soup.HTMLParse(text)
 	result := Result{}
 	divs := doc.Find("form", "id", "AbstractList").
 		FindAll("div", "class", "noselectrow")
+	logger.GetLogger(ctx).Info(fmt.Sprintf("Find %d records", len(divs)))
 	result.Articles = make([]Article, len(divs))
 	for index, div := range divs {
 		result.Articles[index].ID = div.Attrs()["id"][3:]
@@ -94,8 +105,9 @@ func Proc(ctx context.Context, notifyCh *chan int) {
 			}
 		}
 	}
+	logger.GetLogger(ctx).Info(pageTotal)
 
 	result.Total = pageTotal
 	*notifyCh<- _const.StatusSuccess
-	return
+	return result
 }
